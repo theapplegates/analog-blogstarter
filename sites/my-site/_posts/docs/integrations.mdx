@@ -1,0 +1,89 @@
+---
+title: Analog User Guide - Integrations
+summary: Connect an Analog Starter site to Giscus comments and Umami analytics.
+authors:
+  - name: Haozhe Zhu
+    href: https://github.com/zhutmost
+datePublish: 2026-05-15
+category: 💡 Documentation
+tags:
+  - Analog Starter
+  - Integrations
+  - Comment
+  - Analytics
+  - Giscus
+  - Umami
+cover: banner.jpg
+seo:
+  description: Learn how Analog Starter works with Giscus comments and Umami analytics.
+---
+
+Analog Starter supports optional comments through Giscus and optional analytics through Umami.
+
+| Integration     | Status   | External service required             |
+| --------------- | -------- | ------------------------------------- |
+| Giscus comments | Optional | GitHub Discussions                    |
+| Umami analytics | Optional | Umami Cloud or a self-hosted instance |
+
+## Giscus comments
+
+[Giscus](https://giscus.app) stores comments in GitHub Discussions.
+
+Use the configuration form on the Giscus website to select a repository, discussion category, page mapping, language, and other preferences. The page also checks the required repository settings and generates the IDs needed by the site.
+
+Copy the generated values into the `comment` section of `site.config.ts`. A minimal configuration is shown in [Site Configuration](/post/docs/site-configuration#comments).
+
+Comments are only rendered when Giscus is configured globally and the current content enables them. Posts enable comments by default and can opt out with:
+
+```yaml
+comment: false
+```
+
+Pages and author profiles disable comments by default and can opt in with:
+
+```yaml
+comment: true
+```
+
+Visitors use a GitHub account to comment. Discussions can be reviewed and moderated from the repository selected during Giscus setup.
+
+## Umami analytics
+
+[Umami](https://umami.is) provides lightweight, privacy-focused web analytics. Analog loads the Umami tracker directly through Next.js, so no additional analytics package is required.
+
+Create a website in Umami and copy its **Website ID** into the `analytics` section of `site.config.ts`:
+
+```ts
+analytics: {
+  umami: {
+    websiteId: "00000000-0000-0000-0000-000000000000",
+  },
+},
+```
+
+Omitting `analytics.umami` disables analytics completely and prevents the tracker script from being loaded.
+
+By default, Analog:
+
+- loads the tracker from https://cloud.umami.is/script.js;
+- restricts tracking to the hostname defined by siteUrl;
+- respects the visitor's Do Not Track preference;
+- excludes URL hash fragments;
+- lets Umami follow client-side route changes automatically.
+
+The hostname restriction prevents local development and unrelated preview domains from contributing analytics events. Additional domains can be configured when preview deployments should also be tracked.
+
+A self-hosted Umami instance can provide its own script and API origin:
+
+```ts
+analytics: {
+  umami: {
+    websiteId: "00000000-0000-0000-0000-000000000000",
+    src: "https://analytics.example.com/script.js",
+    hostUrl: "https://analytics.example.com",
+    domains: ["example.com", "www.example.com"],
+  },
+},
+```
+
+The complete list of options is documented in [Site Configuration](/post/docs/site-configuration#analytics).
