@@ -19,11 +19,18 @@ import {
 } from "@/components/ui/shadcn/command"
 import { Kbd, KbdGroup } from "@/components/ui/shadcn/kbd"
 import { classifyHref } from "@/lib/href"
+import { createSiteSearchIndex, searchSiteSearchIndex } from "@/lib/search/orama-index"
 import {
   type SiteSearchData,
   type SiteSearchDocument,
   type SiteSearchQuickLink,
 } from "@/lib/search/search-data"
+
+import {
+  getMatchingKeywords,
+  hasSearchHighlight,
+  SearchHighlightedText,
+} from "./search-highlighted-text"
 
 type SearchDataStatus = "idle" | "loading" | "ready" | "error"
 
@@ -68,20 +75,46 @@ export function SiteSearch() {
 
   const { documents, quickLinks } = searchData ?? EMPTY_SEARCH_DATA
 
-  const groupedDocuments = React.useMemo(
-    () => ({
-      articles: documents.filter((document) => document.kind === "article"),
-      pages: documents.filter((document) => document.kind === "page"),
-      topics: documents.filter(
-        (document) => document.kind === "category" || document.kind === "tag"
-      ),
-      people: documents.filter((document) => document.kind === "person"),
-    }),
+  const hasQuery = query.trim().length > 0
+
+  const searchIndex = React.useMemo(
+    () => (searchData ? createSiteSearchIndex(searchData.documents) : null),
+    [searchData]
+  )
+
+  const documentsById = React.useMemo(
+    () => new Map(documents.map((document) => [document.id, document])),
     [documents]
   )
 
-  const recentArticles = groupedDocuments.articles.slice(0, 4)
-  const hasQuery = query.trim().length > 0
+  const matchedDocuments = React.useMemo(() => {
+    if (!searchIndex || !hasQuery) {
+      return []
+    }
+
+    return searchSiteSearchIndex(searchIndex, query).flatMap((key) => {
+      const document = documentsById.get(key)
+
+      return document ? [document] : []
+    })
+  }, [documentsById, hasQuery, query, searchIndex])
+
+  const groupedDocuments = React.useMemo(
+    () => ({
+      articles: matchedDocuments.filter((document) => document.kind === "article"),
+      pages: matchedDocuments.filter((document) => document.kind === "page"),
+      topics: matchedDocuments.filter(
+        (document) => document.kind === "category" || document.kind === "tag"
+      ),
+      people: matchedDocuments.filter((document) => document.kind === "person"),
+    }),
+    [matchedDocuments]
+  )
+
+  const recentArticles = React.useMemo(
+    () => documents.filter((document) => document.kind === "article").slice(0, 4),
+    [documents]
+  )
 
   React.useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -172,7 +205,7 @@ export function SiteSearch() {
           "lg:max-w-2xl"
         )}
       >
-        <Command label="Site search" shouldFilter={hasQuery} filter={filterSearchDocument}>
+        <Command label="Site search" shouldFilter={false}>
           <CommandInput
             value={query}
             onValueChange={setQuery}
@@ -187,24 +220,28 @@ export function SiteSearch() {
                 <SearchDocumentGroup
                   heading="Articles"
                   documents={groupedDocuments.articles}
+                  query={query}
                   onSelect={handleSelect}
                 />
 
                 <SearchDocumentGroup
                   heading="Pages"
                   documents={groupedDocuments.pages}
+                  query={query}
                   onSelect={handleSelect}
                 />
 
                 <SearchDocumentGroup
                   heading="Topics"
                   documents={groupedDocuments.topics}
+                  query={query}
                   onSelect={handleSelect}
                 />
 
                 <SearchDocumentGroup
                   heading="People"
                   documents={groupedDocuments.people}
+                  query={query}
                   onSelect={handleSelect}
                 />
 
@@ -222,6 +259,7 @@ export function SiteSearch() {
                       <SearchDocumentItem
                         key={document.id}
                         document={document}
+                        query=""
                         onSelect={handleSelect}
                       />
                     ))}
@@ -318,10 +356,11 @@ function SearchDataState({ status, onRetry }: SearchDataStateProps) {
 type SearchDocumentGroupProps = {
   heading: string
   documents: SiteSearchDocument[]
+  query: string
   onSelect: (href: string) => void
 }
 
-function SearchDocumentGroup({ heading, documents, onSelect }: SearchDocumentGroupProps) {
+function SearchDocumentGroup({ heading, documents, query, onSelect }: SearchDocumentGroupProps) {
   if (documents.length === 0) {
     return null
   }
@@ -329,7 +368,12 @@ function SearchDocumentGroup({ heading, documents, onSelect }: SearchDocumentGro
   return (
     <CommandGroup heading={heading}>
       {documents.map((document) => (
-        <SearchDocumentItem key={document.id} document={document} onSelect={onSelect} />
+        <SearchDocumentItem
+          key={document.id}
+          document={document}
+          query={query}
+          onSelect={onSelect}
+        />
       ))}
     </CommandGroup>
   )
@@ -337,10 +381,11 @@ function SearchDocumentGroup({ heading, documents, onSelect }: SearchDocumentGro
 
 type SearchDocumentItemProps = {
   document: SiteSearchDocument
+  query: string
   onSelect: (href: string) => void
 }
 
-function SearchDocumentItem({ document, onSelect }: SearchDocumentItemProps) {
+function SearchDocumentItem({ document, query, onSelect }: SearchDocumentItemProps) {
   const hasDescription = Boolean(document.description)
   const hasMetadata = Boolean(document.meta || document.secondaryMeta)
   const hasAvatar = Boolean(document.avatar)
@@ -348,10 +393,17 @@ function SearchDocumentItem({ document, onSelect }: SearchDocumentItemProps) {
   const showCompactMetadata = !hasDescription && !hasAvatar && hasMetadata
   const showStackedMetadata = hasMetadata && (hasDescription || hasAvatar)
 
+  const visibleText = [document.title, document.description, document.meta, document.secondaryMeta]
+    .filter(Boolean)
+    .join(" ")
+
+  const matchedKeywords = hasSearchHighlight(visibleText, query)
+    ? []
+    : getMatchingKeywords(document.keywords, query)
+
   return (
     <CommandItem
       value={document.id}
-      keywords={document.keywords}
       onSelect={() => onSelect(document.href)}
       className={cn("@container items-start gap-3 px-3 py-2.5", "[&>svg:last-child]:hidden")}
     >
@@ -364,19 +416,28 @@ function SearchDocumentItem({ document, onSelect }: SearchDocumentItemProps) {
               </span>
             )}
 
-            <TwemojifyText text={document.title} />
+            <SearchHighlightedText text={document.title} query={query} />
           </div>
 
-          {showCompactMetadata && <SearchDocumentMetadata document={document} compact />}
+          {showCompactMetadata && (
+            <SearchDocumentMetadata document={document} query={query} compact />
+          )}
         </div>
 
         {document.description && (
           <p className="mt-0.5 line-clamp-2 text-sm leading-snug text-muted-foreground">
-            <TwemojifyText text={document.description} />
+            <SearchHighlightedText text={document.description} query={query} />
           </p>
         )}
 
-        {showStackedMetadata && <SearchDocumentMetadata document={document} />}
+        {showStackedMetadata && <SearchDocumentMetadata document={document} query={query} />}
+
+        {matchedKeywords.length > 0 && (
+          <p className="mt-1 line-clamp-1 text-xs leading-snug text-muted-foreground/75">
+            <span className="text-muted-foreground/60">Matched: </span>
+            <SearchHighlightedText text={matchedKeywords.join(" · ")} query={query} />
+          </p>
+        )}
       </div>
 
       {document.avatar && (
@@ -394,10 +455,11 @@ function SearchDocumentItem({ document, onSelect }: SearchDocumentItemProps) {
 
 type SearchDocumentMetadataProps = {
   document: SiteSearchDocument
+  query: string
   compact?: boolean
 }
 
-function SearchDocumentMetadata({ document, compact = false }: SearchDocumentMetadataProps) {
+function SearchDocumentMetadata({ document, query, compact = false }: SearchDocumentMetadataProps) {
   const { meta, secondaryMeta } = document
 
   if (!meta && !secondaryMeta) {
@@ -414,7 +476,7 @@ function SearchDocumentMetadata({ document, compact = false }: SearchDocumentMet
     >
       {meta && (
         <span className={cn(document.kind === "article" && "font-medium text-primary")}>
-          <TwemojifyText text={meta} />
+          <SearchHighlightedText text={meta} query={query} />
         </span>
       )}
 
@@ -422,7 +484,7 @@ function SearchDocumentMetadata({ document, compact = false }: SearchDocumentMet
 
       {secondaryMeta && (
         <span>
-          <TwemojifyText text={secondaryMeta} />
+          <SearchHighlightedText text={secondaryMeta} query={query} />
         </span>
       )}
     </span>
@@ -438,7 +500,6 @@ function QuickLinkItem({ link, onSelect }: QuickLinkItemProps) {
   return (
     <CommandItem
       value={`quick-link:${link.href}`}
-      keywords={[link.label]}
       onSelect={() => onSelect(link.href)}
       className="px-3 py-2.5 [&>svg:last-child]:hidden"
     >
@@ -475,47 +536,6 @@ function SearchFooter() {
       </span>
     </div>
   )
-}
-
-function filterSearchDocument(_value: string, search: string, keywords?: string[]): number {
-  const query = normalizeSearchValue(search)
-
-  if (!query) {
-    return 1
-  }
-
-  const normalizedKeywords = (keywords ?? []).map(normalizeSearchValue)
-
-  const title = normalizedKeywords.at(0) ?? ""
-  const searchableText = normalizedKeywords.join(" ")
-
-  if (title === query) {
-    return 1
-  }
-
-  if (title.startsWith(query)) {
-    return 0.95
-  }
-
-  if (title.includes(query)) {
-    return 0.9
-  }
-
-  if (searchableText.includes(query)) {
-    return 0.75
-  }
-
-  const terms = query.split(/\s+/u).filter(Boolean)
-
-  if (terms.length > 1 && terms.every((term) => searchableText.includes(term))) {
-    return 0.6
-  }
-
-  return 0
-}
-
-function normalizeSearchValue(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().trim()
 }
 
 function formatHrefLabel(href: string): string {

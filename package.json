@@ -21,6 +21,8 @@
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@giscus/react": "^3.1.0",
+    "@orama/highlight": "^0.1.9",
+    "@orama/orama": "^3.1.18",
     "@tabler/icons-react": "^3.49.0",
     "@wrksz/themes": "^2.1.1",
     "class-variance-authority": "^0.7.1",
