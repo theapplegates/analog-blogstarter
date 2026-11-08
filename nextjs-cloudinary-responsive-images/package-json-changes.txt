@@ -1,7 +1,0 @@
-Add these packages:
-
-npm install next-cloudinary cloudinary
-
-Add this script inside the "scripts" section of package.json:
-
-"cloudinary:breakpoints": "node --env-file=.env.local scripts/cloudinary-breakpoints.mjs"
