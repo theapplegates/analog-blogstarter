@@ -7,7 +7,7 @@ const config: InputSiteConfig = {
   siteTitle: "Demo Site",
   description:
     "Explore the demo and documentation for a content-driven Next.js website starter, including its layouts, content collections, and reusable components.",
-  author: "Luna Lovegood",
+  author: "Paul Applegate",
   favicon: {
     ico: "/favicon/favicon.ico",
     svg: "/favicon/favicon.svg",
